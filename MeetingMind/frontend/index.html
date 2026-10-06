@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MeetingMind</title>
+<style>
+:root{--bg:#f3f5f9;--ink:#1c2433;--mute:#667085;--brand:#2446b8;--soft:#e8edfb;--line:#d8dfec;--ok:#15803d;--warn:#b45309}
+*{box-sizing:border-box}body{margin:0;font:15px/1.55 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;gap:6px;align-items:center;padding:12px 20px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}header b{font-size:20px;color:var(--brand);margin-right:auto}
+main{max-width:900px;margin:0 auto;padding:20px}.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px}
+button{background:var(--brand);color:#fff;border:0;padding:8px 14px;border-radius:6px;font:inherit;cursor:pointer}button.alt{background:var(--soft);color:var(--brand)}button.del{background:#fde8e8;color:#b91c1c}
+button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+input,textarea{font:inherit;padding:9px;border:1px solid var(--line);border-radius:6px;width:100%;margin:4px 0 10px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tag{display:inline-block;background:var(--soft);color:var(--brand);padding:2px 10px;border-radius:99px;margin:2px;font-size:13px}.badge{font-size:12px;background:#fef3c7;color:var(--warn);padding:2px 8px;border-radius:4px}
+.bar{height:10px;background:var(--soft);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--brand)}.done{text-decoration:line-through;color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.stat b{display:block;font-size:26px}.empty{color:var(--mute);text-align:center;padding:24px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}.tabs button{background:#fff;color:var(--ink);border:1px solid var(--line)}.tabs button.on{background:var(--brand);color:#fff}
+#toast{position:fixed;bottom:16px;right:16px;display:grid;gap:8px}#toast div{background:#1c2433;color:#fff;padding:10px 14px;border-radius:6px}#toast .e{background:#b91c1c}.auth{max-width:380px;margin:8vh auto}
+</style></head><body><div id="toast" role="status" aria-live="polite"></div><div id="root"></div>
+<script>
+const $=s=>document.querySelector(s),root=$('#root');let S={token:localStorage.mm_token,name:localStorage.mm_name,page:'meetings',id:null,tab:'Summary'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m,e){const d=document.createElement('div');d.textContent=m;if(e)d.className='e';$('#toast').append(d);setTimeout(()=>d.remove(),4500)}
+async function api(p,o={}){o.headers={...(o.headers||{}),Authorization:'Bearer '+S.token};if(o.json){o.headers['Content-Type']='application/json';o.body=JSON.stringify(o.json);delete o.json}
+ const r=await fetch('/api'+p,o);let d={};try{d=await r.json()}catch{}if(r.status==401&&S.token){localStorage.clear();S.token=null;render()}if(!r.ok)throw new Error(typeof d.detail=='string'?d.detail:'Something went wrong. Please try again.');return d}
+function dl(n,t){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download=n;a.click()}
+function auth(reg){root.innerHTML=`<form class="card auth" id="f"><h1 style="color:var(--brand)">MeetingMind</h1><p>Turn meeting recordings into summaries, decisions and action items.</p>${reg?'<label>Name<input name="name" required></label>':''}<label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" minlength="8" required></label><button>${reg?'Create account':'Log in'}</button><p><a href="#" id="sw">${reg?'I already have an account':'Create an account'}</a></p></form>`;
+ $('#sw').onclick=e=>{e.preventDefault();auth(!reg)};$('#f').onsubmit=async e=>{e.preventDefault();const b=Object.fromEntries(new FormData(e.target));try{
+  if(reg){await api('/auth/register',{method:'POST',json:b});toast('Account created. Log in to continue.');return auth(false)}
+  const d=await api('/auth/login',{method:'POST',json:b});localStorage.mm_token=S.token=d.token;localStorage.mm_name=S.name=d.name;render()}catch(x){toast(x.message,1)}}}
+async function render(){if(!S.token)return auth(false);
+ root.innerHTML=`<header><b>MeetingMind</b><button class="${S.page=='meetings'&&!S.id?'':'alt'}" id="n1">Meetings</button><button class="${S.page=='new'?'':'alt'}" id="n2">New meeting</button><button class="alt" id="lo">Log out</button></header><main id="m"></main>`;
+ $('#n1').onclick=()=>{S.page='meetings';S.id=null;render()};$('#n2').onclick=()=>{S.page='new';S.id=null;render()};
+ $('#lo').onclick=async()=>{await api('/auth/logout',{method:'POST'}).catch(()=>{});localStorage.clear();S.token=null;render()};
+ const m=$('#m');S.id?detail(m):S.page=='new'?create(m):list(m)}
+async function list(m){let L;try{L=await api('/meetings')}catch{return}
+ const open=L.reduce((a,x)=>a+x.open,0);
+ m.innerHTML=`<h2>Welcome back, ${esc(S.name)}</h2><div class="grid"><div class="card stat"><b>${L.length}</b>Meetings</div><div class="card stat"><b>${L.reduce((a,x)=>a+x.decisions,0)}</b>Decisions</div><div class="card stat"><b>${open}</b>Open action items</div></div>
+ <div class="card">${L.length?`<table><tr><th>Meeting</th><th>Decisions</th><th>Actions</th><th>Open</th><th></th></tr>${L.map(x=>`<tr><td><a href="#" data-id="${x.id}">${esc(x.title)}</a> ${x.source=='demo'?'<span class="badge">demo</span>':''}<br><small>${esc(x.created_at)}</small></td><td>${x.decisions}</td><td>${x.actions}</td><td>${x.open}</td><td><button class="del" data-del="${x.id}">Delete</button></td></tr>`).join('')}</table>`:'<div class="empty">No meetings yet. Create one from a recording or a pasted transcript.</div>'}</div>`;
+ m.querySelectorAll('[data-id]').forEach(a=>a.onclick=e=>{e.preventDefault();S.id=a.dataset.id;S.tab='Summary';render()});
+ m.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this meeting?')){await api('/meetings/'+b.dataset.del,{method:'DELETE'});toast('Meeting deleted.');render()}})}
+function create(m){m.innerHTML=`<h2>New meeting</h2><form class="card" id="f"><label>Title<input name="title" placeholder="Weekly product sync"></label><label>Recording (MP3, WAV, M4A, OGG, WEBM)<input type="file" name="file" accept="audio/*"></label>
+ <p style="text-align:center;color:var(--mute)">or paste a transcript (use “Name: text” lines for speaker detection)</p><textarea name="transcript" rows="9" placeholder="Priya: Let's finalize the launch plan.&#10;Arjun: I'll email the vendor by Friday."></textarea>
+ <button>Analyze meeting</button> <button type="button" class="alt" id="ex">Load example</button><p id="st" aria-live="polite"></p></form>`;
+ $('#ex').onclick=async()=>{$('textarea').value=(await api('/demo-transcript')).text};
+ $('#f').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target);if(!fd.get('file').size)fd.delete('file');$('#st').textContent='Transcribing and analyzing…';
+  try{const d=await api('/meetings',{method:'POST',body:fd});S.id=d.id;S.tab='Summary';render()}catch(x){$('#st').textContent='';toast(x.message,1)}}}
+async function detail(m){let d;try{d=await api('/meetings/'+S.id)}catch(x){toast(x.message,1);S.id=null;return render()}
+ const a=d.analysis,T=['Summary','Decisions','Action items','Transcript','Insights'];
+ m.innerHTML=`<p><a href="#" id="bk">← All meetings</a></p><h2>${esc(d.title)} ${d.source=='demo'?'<span class="badge">demo transcript (no speech engine installed)</span>':''}</h2>
+ <div class="tabs">${T.map(t=>`<button class="${S.tab==t?'on':''}" data-t="${t}">${t}</button>`).join('')}</div><div id="tb"></div><div class="card"><button class="alt" id="ex">Export report (TXT)</button></div>`;
+ $('#bk').onclick=e=>{e.preventDefault();S.id=null;render()};m.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.tab=b.dataset.t;detail(m)});
+ $('#ex').onclick=()=>dl(d.title+'.txt',`${d.title}\n\nSUMMARY\n${a.summary}\n\nDECISIONS\n${a.decisions.map(x=>'- '+x.text).join('\n')}\n\nACTION ITEMS\n${a.actions.map(x=>`- [${x.done?'x':' '}] ${x.owner}: ${x.task}${x.deadline?' (due '+x.deadline+')':''}`).join('\n')}\n\nOPEN QUESTIONS\n${a.questions.map(x=>'- '+x).join('\n')}`);
+ const none=t=>`<div class="empty">${t}</div>`,V={
+ Summary:()=>`<div class="card"><h3>Summary</h3><p>${esc(a.summary)||'Not enough content to summarize.'}</p></div><div class="card"><h3>Topics</h3>${a.topics.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div><div class="card"><h3>Open questions</h3>${a.questions.length?`<ul>${a.questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul>`:none('No questions raised.')}</div>`,
+ Decisions:()=>`<div class="card">${a.decisions.length?a.decisions.map(x=>`<p>✔ ${esc(x.text)} <small>(${esc(x.by)})</small></p>`).join(''):none('No decisions detected. Phrases like “we decided” or “agreed” trigger detection.')}</div>`,
+ 'Action items':()=>{setTimeout(()=>m.querySelectorAll('[data-a]').forEach(c=>c.onchange=async()=>{a.actions[c.dataset.a].done=c.checked;await api('/meetings/'+d.id,{method:'PUT',json:{actions:a.actions}});detail(m)}));
+  return `<div class="card">${a.actions.length?`<table><tr><th></th><th>Task</th><th>Owner</th><th>Due</th></tr>${a.actions.map((x,i)=>`<tr><td><input type="checkbox" data-a="${i}" ${x.done?'checked':''} aria-label="Mark done" style="width:auto;margin:0"></td><td class="${x.done?'done':''}">${esc(x.task)}</td><td>${esc(x.owner)}</td><td>${esc(x.deadline||'–')}</td></tr>`).join('')}</table>`:none('No action items detected.')}</div>`},
+ Transcript:()=>{setTimeout(()=>$('#sv').onclick=async()=>{await api('/meetings/'+d.id,{method:'PUT',json:{transcript:$('#ed').value}});toast('Transcript saved and re-analyzed.');detail(m)});
+  return `<div class="card"><textarea id="ed" rows="14">${esc(d.transcript)}</textarea><button id="sv">Save &amp; re-analyze</button></div>`},
+ Insights:()=>`<div class="grid"><div class="card stat"><b>${a.words}</b>Words</div><div class="card stat"><b>${a.speakers.length}</b>Speakers</div><div class="card stat"><b>${esc(a.sentiment)}</b>Overall tone</div></div><div class="card"><h3>Speaking share</h3>${a.speakers.map(s=>`${esc(s.speaker)} · ${s.share}% (${s.words} words)<div class="bar"><i style="width:${s.share}%"></i></div><br>`).join('')}</div>`};
+ $('#tb').innerHTML=V[S.tab]()}
+render();
+</script></body></html>
